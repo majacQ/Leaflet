@@ -77,6 +77,9 @@ export var Canvas = Renderer.extend({
 		this._ctx = container.getContext('2d');
 	},
 
+  <<<<<<< canvas-improvements
+	_updatePaths: function () {
+  =======
 	_destroyContainer: function () {
 		Util.cancelAnimFrame(this._redrawRequest);
 		delete this._ctx;
@@ -88,6 +91,7 @@ export var Canvas = Renderer.extend({
 	_updatePaths: function () {
 		if (this._postponeUpdatePaths) { return; }
 
+  >>>>>>> control-position-extend
 		var layer;
 		this._redrawBounds = null;
 		for (var id in this._layers) {
@@ -137,7 +141,11 @@ export var Canvas = Renderer.extend({
 
 	_initPath: function (layer) {
 		this._updateDashArray(layer);
+  <<<<<<< canvas-improvements
+		this._layers[L.stamp(layer)] = layer;
+  =======
 		this._layers[Util.stamp(layer)] = layer;
+  >>>>>>> control-position-extend
 
 		var order = layer._order = {
 			layer: layer,
@@ -171,7 +179,11 @@ export var Canvas = Renderer.extend({
 
 		delete layer._order;
 
+  <<<<<<< canvas-improvements
+		delete this._layers[L.stamp(layer)];
+  =======
 		delete this._layers[Util.stamp(layer)];
+  >>>>>>> control-position-extend
 
 		this._requestRedraw(layer);
 	},
@@ -214,6 +226,16 @@ export var Canvas = Renderer.extend({
 		if (!this._map) { return; }
 
 		this._extendRedrawBounds(layer);
+  <<<<<<< canvas-improvements
+		this._redrawRequest = this._redrawRequest || L.Util.requestAnimFrame(this._redraw, this);
+	},
+
+	_extendRedrawBounds: function (layer) {
+		var padding = (layer.options.weight || 0) + 1;
+		this._redrawBounds = this._redrawBounds || new L.Bounds();
+		this._redrawBounds.extend(layer._pxBounds.min.subtract([padding, padding]));
+		this._redrawBounds.extend(layer._pxBounds.max.add([padding, padding]));
+  =======
 		this._redrawRequest = this._redrawRequest || Util.requestAnimFrame(this._redraw, this);
 	},
 
@@ -224,16 +246,20 @@ export var Canvas = Renderer.extend({
 			this._redrawBounds.extend(layer._pxBounds.min.subtract([padding, padding]));
 			this._redrawBounds.extend(layer._pxBounds.max.add([padding, padding]));
 		}
+  >>>>>>> control-position-extend
 	},
 
 	_redraw: function () {
 		this._redrawRequest = null;
 
+  <<<<<<< canvas-improvements
+  =======
 		if (this._redrawBounds) {
 			this._redrawBounds.min._floor();
 			this._redrawBounds.max._ceil();
 		}
 
+  >>>>>>> control-position-extend
 		this._clear(); // clear layers in redraw bounds
 		this._draw(); // draw layers
 
@@ -246,10 +272,14 @@ export var Canvas = Renderer.extend({
 			var size = bounds.getSize();
 			this._ctx.clearRect(bounds.min.x, bounds.min.y, size.x, size.y);
 		} else {
+  <<<<<<< canvas-improvements
+			this._ctx.clearRect(0, 0, this._container.width, this._container.height);
+  =======
 			this._ctx.save();
 			this._ctx.setTransform(1, 0, 0, 1, 0, 0);
 			this._ctx.clearRect(0, 0, this._container.width, this._container.height);
 			this._ctx.restore();
+  >>>>>>> control-position-extend
 		}
 	},
 
@@ -338,9 +368,12 @@ export var Canvas = Renderer.extend({
 		}
 
 		if (options.stroke && options.weight !== 0) {
+  <<<<<<< canvas-improvements
+  =======
 			if (ctx.setLineDash) {
 				ctx.setLineDash(layer.options && layer.options._dashArray || []);
 			}
+  >>>>>>> control-position-extend
 			ctx.globalAlpha = options.opacity;
 			ctx.lineWidth = options.weight;
 			ctx.strokeStyle = options.color;
@@ -358,10 +391,15 @@ export var Canvas = Renderer.extend({
 
 		for (var order = this._drawFirst; order; order = order.next) {
 			layer = order.layer;
+  <<<<<<< canvas-improvements
+			if (layer.options.interactive && layer._containsPoint(point) && !this._map._draggableMoved(layer)) {
+				clickedLayer = layer;
+  =======
 			if (layer.options.interactive && layer._containsPoint(point)) {
 				if (!(e.type === 'click' || e.type === 'preclick') || !this._map._draggableMoved(layer)) {
 					clickedLayer = layer;
 				}
+  >>>>>>> control-position-extend
 			}
 		}
 		this._fireEvent(clickedLayer ? [clickedLayer] : false, e);
@@ -387,10 +425,13 @@ export var Canvas = Renderer.extend({
 	},
 
 	_handleMouseHover: function (e, point) {
+  <<<<<<< canvas-improvements
+  =======
 		if (this._mouseHoverThrottled) {
 			return;
 		}
 
+  >>>>>>> control-position-extend
 		var layer, candidateHoveredLayer;
 
 		for (var order = this._drawFirst; order; order = order.next) {
@@ -424,8 +465,65 @@ export var Canvas = Renderer.extend({
 
 	_bringToFront: function (layer) {
 		var order = layer._order;
+  <<<<<<< canvas-improvements
+		var next = order.next;
+		var prev = order.prev;
+
+		if (next) {
+			next.prev = prev;
+		} else {
+			// Already last
+			return;
+		}
+		if (prev) {
+			prev.next = next;
+		} else if (next) {
+			// Update first entry unless this is the
+			// signle entry
+			this._drawFirst = next;
+		}
+
+		order.prev = this._drawLast;
+		this._drawLast.next = order;
+
+		order.next = null;
+		this._drawLast = order;
+
+		this._requestRedraw(layer);
+	},
+
+	_bringToBack: function (layer) {
+		var order = layer._order;
+		var next = order.next;
+		var prev = order.prev;
+
+		if (prev) {
+			prev.next = next;
+		} else {
+			// Already first
+			return;
+		}
+		if (next) {
+			next.prev = prev;
+		} else if (prev) {
+			// Update last entry unless this is the
+			// signle entry
+			this._drawLast = prev;
+		}
+
+		order.prev = null;
+
+		order.next = this._drawFirst;
+		this._drawFirst.prev = order;
+		this._drawFirst = order;
+
+		this._requestRedraw(layer);
+	}
+});
+  =======
 
 		if (!order) { return; }
+  >>>>>>> control-position-extend
 
 		var next = order.next;
 		var prev = order.prev;
