@@ -136,5 +136,6 @@ export var Renderer = Layer.extend({
 
 		this._center = this._map.getCenter();
 		this._zoom = this._map.getZoom();
+		this._pixelOrigin = this._map.getPixelOrigin();
 	}
 });
