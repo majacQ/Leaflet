@@ -1,34 +1,88 @@
+import {Map} from '../map/Map';
+import {Layer} from './Layer';
+import {FeatureGroup} from './FeatureGroup';
+import * as Util from '../core/Util';
+import {toLatLng} from '../geo/LatLng';
+import {toPoint} from '../geometry/Point';
+import * as DomUtil from '../dom/DomUtil';
+
 /*
  * @class DivOverlay
- * @inherits Layer
+ * @inherits Interactive layer
  * @aka L.DivOverlay
- * Base model for L.Popup and L.Tooltip. Inherit from it for custom popup like plugins.
+ * Base model for L.Popup and L.Tooltip. Inherit from it for custom overlays like plugins.
  */
 
 // @namespace DivOverlay
-L.DivOverlay = L.Layer.extend({
+export var DivOverlay = Layer.extend({
 
 	// @section
 	// @aka DivOverlay options
 	options: {
-		// @option offset: Point = Point(0, 7)
-		// The offset of the popup position. Useful to control the anchor
-		// of the popup when opening it on some overlays.
-		offset: [0, 7],
+		// @option interactive: Boolean = false
+		// If true, the popup/tooltip will listen to the mouse events.
+		interactive: false,
+
+		// @option offset: Point = Point(0, 0)
+		// The offset of the overlay position.
+		offset: [0, 0],
 
 		// @option className: String = ''
-		// A custom CSS class name to assign to the popup.
+		// A custom CSS class name to assign to the overlay.
 		className: '',
 
-		// @option pane: String = 'popupPane'
-		// `Map pane` where the popup will be added.
-		pane: 'popupPane'
+		// @option pane: String = undefined
+		// `Map pane` where the overlay will be added.
+		pane: undefined
 	},
 
 	initialize: function (options, source) {
-		L.setOptions(this, options);
+		Util.setOptions(this, options);
 
 		this._source = source;
+	},
+
+	// @method openOn(map: Map): this
+	// Adds the overlay to the map.
+	// Alternative to `map.openPopup(popup)`/`.openTooltip(tooltip)`.
+	openOn: function (map) {
+		map = arguments.length ? map : this._source._map; // experimental, not the part of public api
+		if (!map.hasLayer(this)) {
+			map.addLayer(this);
+		}
+		return this;
+	},
+
+	// @method close(): this
+	// Closes the overlay.
+	// Alternative to `map.closePopup(popup)`/`.closeTooltip(tooltip)`
+	// and `layer.closePopup()`/`.closeTooltip()`.
+	close: function () {
+		if (this._map) {
+			this._map.removeLayer(this);
+		}
+		return this;
+	},
+
+	// @method toggle(layer?: Layer): this
+	// Opens or closes the overlay bound to layer depending on its current state.
+	// Argument may be omitted only for overlay bound to layer.
+	// Alternative to `layer.togglePopup()`/`.toggleTooltip()`.
+	toggle: function (layer) {
+		if (this._map) {
+			this.close();
+		} else {
+			if (arguments.length) {
+				this._source = layer;
+			} else {
+				layer = this._source;
+			}
+			this._prepareOpen();
+
+			// open the overlay on the map
+			this.openOn(layer._map);
+		}
+		return this;
 	},
 
 	onAdd: function (map) {
@@ -39,7 +93,7 @@ L.DivOverlay = L.Layer.extend({
 		}
 
 		if (map._fadeAnimated) {
-			L.DomUtil.setOpacity(this._container, 0);
+			DomUtil.setOpacity(this._container, 0);
 		}
 
 		clearTimeout(this._removeTimeout);
@@ -47,32 +101,42 @@ L.DivOverlay = L.Layer.extend({
 		this.update();
 
 		if (map._fadeAnimated) {
-			L.DomUtil.setOpacity(this._container, 1);
+			DomUtil.setOpacity(this._container, 1);
 		}
 
 		this.bringToFront();
+
+		if (this.options.interactive) {
+			DomUtil.addClass(this._container, 'leaflet-interactive');
+			this.addInteractiveTarget(this._container);
+		}
 	},
 
 	onRemove: function (map) {
 		if (map._fadeAnimated) {
-			L.DomUtil.setOpacity(this._container, 0);
-			this._removeTimeout = setTimeout(L.bind(L.DomUtil.remove, L.DomUtil, this._container), 200);
+			DomUtil.setOpacity(this._container, 0);
+			this._removeTimeout = setTimeout(Util.bind(DomUtil.remove, undefined, this._container), 200);
 		} else {
-			L.DomUtil.remove(this._container);
+			DomUtil.remove(this._container);
+		}
+
+		if (this.options.interactive) {
+			DomUtil.removeClass(this._container, 'leaflet-interactive');
+			this.removeInteractiveTarget(this._container);
 		}
 	},
 
-	// @namespace Popup
+	// @namespace DivOverlay
 	// @method getLatLng: LatLng
-	// Returns the geographical point of popup.
+	// Returns the geographical point of the overlay.
 	getLatLng: function () {
 		return this._latlng;
 	},
 
 	// @method setLatLng(latlng: LatLng): this
-	// Sets the geographical point where the popup will open.
+	// Sets the geographical point where the overlay will open.
 	setLatLng: function (latlng) {
-		this._latlng = L.latLng(latlng);
+		this._latlng = toLatLng(latlng);
 		if (this._map) {
 			this._updatePosition();
 			this._adjustPan();
@@ -81,13 +145,14 @@ L.DivOverlay = L.Layer.extend({
 	},
 
 	// @method getContent: String|HTMLElement
-	// Returns the content of the popup.
+	// Returns the content of the overlay.
 	getContent: function () {
 		return this._content;
 	},
 
 	// @method setContent(htmlContent: String|HTMLElement|Function): this
-	// Sets the HTML content of the popup. If a function is passed the source layer will be passed to the function. The function should return a `String` or `HTMLElement` to be used in the popup.
+	// Sets the HTML content of the overlay. If a function is passed the source layer will be passed to the function.
+	// The function should return a `String` or `HTMLElement` to be used in the overlay.
 	setContent: function (content) {
 		this._content = content;
 		this.update();
@@ -95,13 +160,13 @@ L.DivOverlay = L.Layer.extend({
 	},
 
 	// @method getElement: String|HTMLElement
-	// Alias for [getContent()](#popup-getcontent)
+	// Returns the HTML container of the overlay.
 	getElement: function () {
 		return this._container;
 	},
 
 	// @method update: null
-	// Updates the popup content, layout and position. Useful for updating the popup after something inside changed, e.g. image loaded.
+	// Updates the overlay content, layout and position. Useful for updating the overlay after something inside changed, e.g. image loaded.
 	update: function () {
 		if (!this._map) { return; }
 
@@ -129,27 +194,68 @@ L.DivOverlay = L.Layer.extend({
 	},
 
 	// @method isOpen: Boolean
-	// Returns `true` when the popup is visible on the map.
+	// Returns `true` when the overlay is visible on the map.
 	isOpen: function () {
 		return !!this._map && this._map.hasLayer(this);
 	},
 
 	// @method bringToFront: this
-	// Brings this popup in front of other popups (in the same map pane).
+	// Brings this overlay in front of other overlays (in the same map pane).
 	bringToFront: function () {
 		if (this._map) {
-			L.DomUtil.toFront(this._container);
+			DomUtil.toFront(this._container);
 		}
 		return this;
 	},
 
 	// @method bringToBack: this
-	// Brings this popup to the back of other popups (in the same map pane).
+	// Brings this overlay to the back of other overlays (in the same map pane).
 	bringToBack: function () {
 		if (this._map) {
-			L.DomUtil.toBack(this._container);
+			DomUtil.toBack(this._container);
 		}
 		return this;
+	},
+
+	// prepare bound overlay to open: update latlng pos / content source (for FeatureGroup)
+	_prepareOpen: function (latlng) {
+		var source = this._source;
+		if (!source._map) { return false; }
+
+		if (source instanceof FeatureGroup) {
+			source = null;
+			var layers = this._source._layers;
+			for (var id in layers) {
+				if (layers[id]._map) {
+					source = layers[id];
+					break;
+				}
+			}
+			if (!source) { return false; } // Unable to get source layer.
+
+			// set overlay source to this layer
+			this._source = source;
+		}
+
+		if (!latlng) {
+			if (source.getCenter) {
+				latlng = source.getCenter();
+			} else if (source.getLatLng) {
+				latlng = source.getLatLng();
+			} else if (source.getBounds) {
+				latlng = source.getBounds().getCenter();
+			} else {
+				throw new Error('Unable to get source layer LatLng.');
+			}
+		}
+		this.setLatLng(latlng);
+
+		if (this._map) {
+			// update the overlay (content, layout, etc...)
+			this.update();
+		}
+
+		return true;
 	},
 
 	_updateContent: function () {
@@ -166,6 +272,11 @@ L.DivOverlay = L.Layer.extend({
 			}
 			node.appendChild(content);
 		}
+
+		// @namespace DivOverlay
+		// @section DivOverlay events
+		// @event contentupdate: Event
+		// Fired when the content of the overlay is updated
 		this.fire('contentupdate');
 	},
 
@@ -173,11 +284,11 @@ L.DivOverlay = L.Layer.extend({
 		if (!this._map) { return; }
 
 		var pos = this._map.latLngToLayerPoint(this._latlng),
-		    offset = L.point(this.options.offset),
+		    offset = toPoint(this.options.offset),
 		    anchor = this._getAnchor();
 
 		if (this._zoomAnimated) {
-			L.DomUtil.setPosition(this._container, pos.add(anchor));
+			DomUtil.setPosition(this._container, pos.add(anchor));
 		} else {
 			offset = offset.add(pos).add(anchor);
 		}
@@ -185,7 +296,7 @@ L.DivOverlay = L.Layer.extend({
 		var bottom = this._containerBottom = -offset.y,
 		    left = this._containerLeft = -Math.round(this._containerWidth / 2) + offset.x;
 
-		// bottom position the popup in case the height of the popup changes (images loading etc)
+		// bottom position the overlay in case the height of the overlay changes (images loading etc)
 		this._container.style.bottom = bottom + 'px';
 		this._container.style.left = left + 'px';
 	},
@@ -194,4 +305,32 @@ L.DivOverlay = L.Layer.extend({
 		return [0, 0];
 	}
 
+});
+
+Map.include({
+	_initOverlay: function (OverlayClass, content, latlng, options) {
+		var overlay = content;
+		if (!(overlay instanceof OverlayClass)) {
+			overlay = new OverlayClass(options).setContent(content);
+		}
+		if (latlng) {
+			overlay.setLatLng(latlng);
+		}
+		return overlay;
+	}
+});
+
+
+Layer.include({
+	_initOverlay: function (OverlayClass, old, content, options) {
+		var overlay = content;
+		if (overlay instanceof OverlayClass) {
+			Util.setOptions(overlay, options);
+			overlay._source = this;
+		} else {
+			overlay = (old && !options) ? old : new OverlayClass(options, this);
+			overlay.setContent(content);
+		}
+		return overlay;
+	}
 });

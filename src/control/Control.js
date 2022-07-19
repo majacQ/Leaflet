@@ -1,3 +1,9 @@
+
+import {Class} from '../core/Class';
+import {Map} from '../map/Map';
+import * as Util from '../core/Util';
+import * as DomUtil from '../dom/DomUtil';
+
 /*
  * @class Control
  * @aka L.Control
@@ -7,18 +13,18 @@
  * All other controls extend from this class.
  */
 
-L.Control = L.Class.extend({
+export var Control = Class.extend({
 	// @section
-	// @aka Control options
+	// @aka Control Options
 	options: {
 		// @option position: String = 'topright'
-		// The position of the control (one of the map corners). Possible values are `'topleft'`,
-		// `'topright'`, `'bottomleft'` or `'bottomright'`
+		// The position of the control. Possible values are `'topleft'`, `'topright'`, `'topcenter'`,
+		// `'bottomleft'`, `'bottomright'`, `'bottomcenter'`, `'centerleft'`, `'centerright'` or `'center'`
 		position: 'topright'
 	},
 
 	initialize: function (options) {
-		L.setOptions(this, options);
+		Util.setOptions(this, options);
 	},
 
 	/* @section
@@ -65,13 +71,15 @@ L.Control = L.Class.extend({
 		    pos = this.getPosition(),
 		    corner = map._controlCorners[pos];
 
-		L.DomUtil.addClass(container, 'leaflet-control');
+		DomUtil.addClass(container, 'leaflet-control');
 
 		if (pos.indexOf('bottom') !== -1) {
 			corner.insertBefore(container, corner.firstChild);
 		} else {
 			corner.appendChild(container);
 		}
+
+		this._map.on('unload', this.remove, this);
 
 		return this;
 	},
@@ -83,12 +91,13 @@ L.Control = L.Class.extend({
 			return this;
 		}
 
-		L.DomUtil.remove(this._container);
+		DomUtil.remove(this._container);
 
 		if (this.onRemove) {
 			this.onRemove(this._map);
 		}
 
+		this._map.off('unload', this.remove, this);
 		this._map = null;
 
 		return this;
@@ -102,8 +111,8 @@ L.Control = L.Class.extend({
 	}
 });
 
-L.control = function (options) {
-	return new L.Control(options);
+export var control = function (options) {
+	return new Control(options);
 };
 
 /* @section Extension methods
@@ -121,7 +130,7 @@ L.control = function (options) {
 /* @namespace Map
  * @section Methods for Layers and Controls
  */
-L.Map.include({
+Map.include({
 	// @method addControl(control: Control): this
 	// Adds the given control to the map
 	addControl: function (control) {
@@ -140,21 +149,29 @@ L.Map.include({
 		var corners = this._controlCorners = {},
 		    l = 'leaflet-',
 		    container = this._controlContainer =
-		            L.DomUtil.create('div', l + 'control-container', this._container);
+		            DomUtil.create('div', l + 'control-container', this._container);
 
-		function createCorner(vSide, hSide) {
-			var className = l + vSide + ' ' + l + hSide;
-
-			corners[vSide + hSide] = L.DomUtil.create('div', className, container);
+		function createCorner(corner, className) {
+			corners[corner] = DomUtil.create('div', className, container);
 		}
 
-		createCorner('top', 'left');
-		createCorner('top', 'right');
-		createCorner('bottom', 'left');
-		createCorner('bottom', 'right');
+		createCorner('topleft', 'leaflet-top leaflet-left');
+		createCorner('topright', 'leaflet-top leaflet-right');
+		createCorner('topcenter', 'leaflet-top leaflet-horizontal-center');
+		createCorner('bottomleft', 'leaflet-bottom leaflet-left');
+		createCorner('bottomright', 'leaflet-bottom leaflet-right');
+		createCorner('bottomcenter', 'leaflet-bottom leaflet-horizontal-center');
+		createCorner('leftcenter', 'leaflet-left leaflet-vertical-center');
+		createCorner('rightcenter', 'leaflet-right leaflet-vertical-center');
+		createCorner('center', 'leaflet-horizontal-center leaflet-vertical-center');
 	},
 
 	_clearControlPos: function () {
-		L.DomUtil.remove(this._controlContainer);
+		for (var i in this._controlCorners) {
+			DomUtil.remove(this._controlCorners[i]);
+		}
+		DomUtil.remove(this._controlContainer);
+		delete this._controlCorners;
+		delete this._controlContainer;
 	}
 });
