@@ -3,6 +3,7 @@ import * as Util from '../core/Util';
 import * as Browser from '../core/Browser';
 import {addPointerListener, removePointerListener} from './DomEvent.Pointer';
 import {addDoubleTapListener, removeDoubleTapListener} from './DomEvent.DoubleTap';
+import {getScale} from './DomUtil';
 
 /*
  * @namespace DomEvent
@@ -37,9 +38,10 @@ export function on(obj, types, fn, context) {
 	return this;
 }
 
+var eventsKey = '_leaflet_events';
+
 // @function off(el: HTMLElement, types: String, fn: Function, context?: Object): this
-// Removes a previously added listener function. If no function is specified,
-// it will remove all the listeners of that particular DOM event from the element.
+// Removes a previously added listener function.
 // Note that if you passed a custom context to on, you must pass the same
 // context to `off` in order to remove the listener.
 
@@ -52,18 +54,34 @@ export function off(obj, types, fn, context) {
 		for (var type in types) {
 			removeOne(obj, type, types[type], fn);
 		}
-	} else {
+	} else if (types) {
 		types = Util.splitWords(types);
 
 		for (var i = 0, len = types.length; i < len; i++) {
 			removeOne(obj, types[i], fn, context);
 		}
+	} else {
+		for (var j in obj[eventsKey]) {
+			removeOne(obj, j, obj[eventsKey][j]);
+		}
+		delete obj[eventsKey];
 	}
 
 	return this;
 }
 
-var eventsKey = '_leaflet_events';
+function browserFiresNativeDblClick() {
+	// See https://github.com/w3c/pointerevents/issues/171
+	if (Browser.pointer) {
+		return !(Browser.edge || Browser.safari);
+	}
+}
+
+var mouseSubst = {
+	mouseenter: 'mouseover',
+	mouseleave: 'mouseout',
+	wheel: !('onwheel' in window) && 'mousewheel'
+};
 
 function addOne(obj, type, fn, context) {
 	var id = type + Util.stamp(fn) + (context ? '_' + Util.stamp(context) : '');
@@ -80,33 +98,25 @@ function addOne(obj, type, fn, context) {
 		// Needs DomEvent.Pointer.js
 		addPointerListener(obj, type, handler, id);
 
-	} else if (Browser.touch && (type === 'dblclick') && addDoubleTapListener &&
-	           !(Browser.pointer && Browser.chrome)) {
-		// Chrome >55 does not need the synthetic dblclicks from addDoubleTapListener
-		// See #5180
+	} else if (Browser.touch && (type === 'dblclick') && !browserFiresNativeDblClick()) {
 		addDoubleTapListener(obj, handler, id);
 
 	} else if ('addEventListener' in obj) {
 
-		if (type === 'mousewheel') {
-			obj.addEventListener('onwheel' in obj ? 'wheel' : 'mousewheel', handler, false);
+		if (type === 'touchstart' || type === 'touchmove' || type === 'wheel' ||  type === 'mousewheel') {
+			obj.addEventListener(mouseSubst[type] || type, handler, Browser.passiveEvents ? {passive: false} : false);
 
-		} else if ((type === 'mouseenter') || (type === 'mouseleave')) {
+		} else if (type === 'mouseenter' || type === 'mouseleave') {
 			handler = function (e) {
 				e = e || window.event;
 				if (isExternalTarget(obj, e)) {
 					originalHandler(e);
 				}
 			};
-			obj.addEventListener(type === 'mouseenter' ? 'mouseover' : 'mouseout', handler, false);
+			obj.addEventListener(mouseSubst[type], handler, false);
 
 		} else {
-			if (type === 'click' && Browser.android) {
-				handler = function (e) {
-					filterClick(e, originalHandler);
-				};
-			}
-			obj.addEventListener(type, handler, false);
+			obj.addEventListener(type, originalHandler, false);
 		}
 
 	} else if ('attachEvent' in obj) {
@@ -127,19 +137,12 @@ function removeOne(obj, type, fn, context) {
 	if (Browser.pointer && type.indexOf('touch') === 0) {
 		removePointerListener(obj, type, id);
 
-	} else if (Browser.touch && (type === 'dblclick') && removeDoubleTapListener) {
+	} else if (Browser.touch && (type === 'dblclick') && !browserFiresNativeDblClick()) {
 		removeDoubleTapListener(obj, id);
 
 	} else if ('removeEventListener' in obj) {
 
-		if (type === 'mousewheel') {
-			obj.removeEventListener('onwheel' in obj ? 'wheel' : 'mousewheel', handler, false);
-
-		} else {
-			obj.removeEventListener(
-				type === 'mouseenter' ? 'mouseover' :
-				type === 'mouseleave' ? 'mouseout' : type, handler, false);
-		}
+		obj.removeEventListener(mouseSubst[type] || type, handler, false);
 
 	} else if ('detachEvent' in obj) {
 		obj.detachEvent('on' + type, handler);
@@ -170,9 +173,10 @@ export function stopPropagation(e) {
 }
 
 // @function disableScrollPropagation(el: HTMLElement): this
-// Adds `stopPropagation` to the element's `'mousewheel'` events (plus browser variants).
+// Adds `stopPropagation` to the element's `'wheel'` events (plus browser variants).
 export function disableScrollPropagation(el) {
-	return addOne(el, 'mousewheel', stopPropagation);
+	addOne(el, 'wheel', stopPropagation);
+	return this;
 }
 
 // @function disableClickPropagation(el: HTMLElement): this
@@ -198,7 +202,7 @@ export function preventDefault(e) {
 	return this;
 }
 
-// @function stop(ev): this
+// @function stop(ev: DOMEvent): this
 // Does `stopPropagation` and `preventDefault` at the same time.
 export function stop(e) {
 	preventDefault(e);
@@ -208,27 +212,31 @@ export function stop(e) {
 
 // @function getMousePosition(ev: DOMEvent, container?: HTMLElement): Point
 // Gets normalized mouse position from a DOM event relative to the
-// `container` or to the whole page if not specified.
+// `container` (border excluded) or to the whole page if not specified.
 export function getMousePosition(e, container) {
 	if (!container) {
 		return new Point(e.clientX, e.clientY);
 	}
 
-	var rect = container.getBoundingClientRect();
+	var scale = getScale(container),
+	    offset = scale.boundingClientRect; // left and top  values are in page scale (like the event clientX/Y)
 
 	return new Point(
-		e.clientX - rect.left - container.clientLeft,
-		e.clientY - rect.top - container.clientTop);
+		// offset.left/top values are in page scale (like clientX/Y),
+		// whereas clientLeft/Top (border width) values are the original values (before CSS scale applies).
+		(e.clientX - offset.left) / scale.x - container.clientLeft,
+		(e.clientY - offset.top) / scale.y - container.clientTop
+	);
 }
 
 // Chrome on Win scrolls double the pixels as in other platforms (see #4538),
 // and Firefox scrolls device pixels, not CSS pixels
 var wheelPxFactor =
-	(Browser.win && Browser.chrome) ? 2 :
+	(Browser.win && Browser.chrome) ? 2 * window.devicePixelRatio :
 	Browser.gecko ? window.devicePixelRatio : 1;
 
 // @function getWheelDelta(ev: DOMEvent): Number
-// Gets normalized wheel delta from a mousewheel DOM event, in vertical
+// Gets normalized wheel delta from a wheel DOM event, in vertical
 // pixels scrolled (negative if scrolling down).
 // Events from pointing devices without precise scrolling are mapped to
 // a best guess of 60 pixels.
@@ -273,27 +281,6 @@ export function isExternalTarget(el, e) {
 		return false;
 	}
 	return (related !== el);
-}
-
-var lastClick;
-
-// this is a horrible workaround for a bug in Android where a single touch triggers two click events
-function filterClick(e, handler) {
-	var timeStamp = (e.timeStamp || (e.originalEvent && e.originalEvent.timeStamp)),
-	    elapsed = lastClick && (timeStamp - lastClick);
-
-	// are they closer together than 500ms yet more than 100ms?
-	// Android typically triggers them ~300ms apart while multiple listeners
-	// on the same event should be triggered far faster;
-	// or check if click is simulated on the element, and if it is, reject any non-simulated events
-
-	if ((elapsed && elapsed > 100 && elapsed < 500) || (e.target._simulatedClick && !e._simulated)) {
-		stop(e);
-		return;
-	}
-	lastClick = timeStamp;
-
-	handler(e);
 }
 
 // @function addListener(…): this

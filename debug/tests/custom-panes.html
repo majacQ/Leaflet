@@ -9,7 +9,6 @@
 	
 	<link rel="stylesheet" href="../css/screen.css" />
 	
-	<script type="text/javascript" src="../../build/deps.js"></script>
 	<script src="../leaflet-include.js"></script>
 	
 	<style>
@@ -31,11 +30,11 @@
 		<div id="mapSvg"></div>
 	</div>
 
-	<script type="text/javascript">
+	<script>
 
 		function makeMap(container, options) {
-			var osmUrl = 'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-				osmAttrib = '&copy; <a href="http://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+			var osmUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+				osmAttrib = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
 				osm = L.tileLayer(osmUrl, {maxZoom: 18, attribution: osmAttrib});
 
 			var map = L.map(container, options)

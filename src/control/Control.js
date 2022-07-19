@@ -79,6 +79,8 @@ export var Control = Class.extend({
 			corner.appendChild(container);
 		}
 
+		this._map.on('unload', this.remove, this);
+
 		return this;
 	},
 
@@ -95,6 +97,7 @@ export var Control = Class.extend({
 			this.onRemove(this._map);
 		}
 
+		this._map.off('unload', this.remove, this);
 		this._map = null;
 
 		return this;
@@ -161,6 +164,11 @@ Map.include({
 	},
 
 	_clearControlPos: function () {
+		for (var i in this._controlCorners) {
+			DomUtil.remove(this._controlCorners[i]);
+		}
 		DomUtil.remove(this._controlContainer);
+		delete this._controlCorners;
+		delete this._controlContainer;
 	}
 });

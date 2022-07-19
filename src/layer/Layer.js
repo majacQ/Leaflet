@@ -14,7 +14,7 @@ import * as Util from '../core/Util';
  * @example
  *
  * ```js
- * var layer = L.Marker(latlng).addTo(map);
+ * var layer = L.marker(latlng).addTo(map);
  * layer.addTo(map);
  * layer.remove();
  * ```
@@ -34,18 +34,19 @@ export var Layer = Evented.extend({
 		// @option pane: String = 'overlayPane'
 		// By default the layer will be added to the map's [overlay pane](#map-overlaypane). Overriding this option will cause the layer to be placed on another pane by default.
 		pane: 'overlayPane',
-		nonBubblingEvents: [],  // Array of events that should not be bubbled to DOM parents (like the map),
 
 		// @option attribution: String = null
-		// String to be shown in the attribution control, describes the layer data, e.g. "© Mapbox".
-		attribution: null
+		// String to be shown in the attribution control, e.g. "© OpenStreetMap contributors". It describes the layer data and is often a legal obligation towards copyright holders and tile providers.
+		attribution: null,
+
+		bubblingMouseEvents: true
 	},
 
 	/* @section
 	 * Classes extending `L.Layer` will inherit the following methods:
 	 *
-	 * @method addTo(map: Map): this
-	 * Adds the layer to the given map
+	 * @method addTo(map: Map|LayerGroup): this
+	 * Adds the layer to the given map or layer group.
 	 */
 	addTo: function (map) {
 		map.addLayer(this);
@@ -60,6 +61,10 @@ export var Layer = Evented.extend({
 
 	// @method removeFrom(map: Map): this
 	// Removes the layer from the given map
+	//
+	// @alternative
+	// @method removeFrom(group: LayerGroup): this
+	// Removes the layer from the given `LayerGroup`
 	removeFrom: function (obj) {
 		if (obj) {
 			obj.removeLayer(this);
@@ -154,6 +159,10 @@ Map.include({
 	// @method addLayer(layer: Layer): this
 	// Adds the given layer to the map
 	addLayer: function (layer) {
+		if (!layer._layerAdd) {
+			throw new Error('The provided object is not a Layer.');
+		}
+
 		var id = Util.stamp(layer);
 		if (this._layers[id]) { return this; }
 		this._layers[id] = layer;

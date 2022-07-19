@@ -21,7 +21,6 @@ import {Point} from '../geometry/Point';
  * ```
  */
 
-var _dragging = false;
 var START = Browser.touch ? 'touchstart mousedown' : 'mousedown';
 var END = {
 	mousedown: 'mouseup',
@@ -40,15 +39,19 @@ var MOVE = {
 export var Draggable = Evented.extend({
 
 	options: {
+		// @section
+		// @aka Draggable options
 		// @option clickTolerance: Number = 3
 		// The max number of pixels a user can shift the mouse pointer during a click
 		// for it to be considered a valid click (as opposed to a mouse drag).
 		clickTolerance: 3
 	},
 
-	// @constructor L.Draggable(el: HTMLElement, dragHandle?: HTMLElement, preventOutline: Boolean)
+	// @constructor L.Draggable(el: HTMLElement, dragHandle?: HTMLElement, preventOutline?: Boolean, options?: Draggable options)
 	// Creates a `Draggable` object for moving `el` when you start dragging the `dragHandle` element (equals `el` itself by default).
-	initialize: function (element, dragStartTarget, preventOutline) {
+	initialize: function (element, dragStartTarget, preventOutline, options) {
+		Util.setOptions(this, options);
+
 		this._element = element;
 		this._dragStartTarget = dragStartTarget || element;
 		this._preventOutline = preventOutline;
@@ -71,7 +74,7 @@ export var Draggable = Evented.extend({
 
 		// If we're currently dragging this draggable,
 		// disabling it counts as first ending the drag.
-		if (L.Draggable._dragging === this) {
+		if (Draggable._dragging === this) {
 			this.finishDrag();
 		}
 
@@ -93,8 +96,8 @@ export var Draggable = Evented.extend({
 
 		if (DomUtil.hasClass(this._element, 'leaflet-zoom-anim')) { return; }
 
-		if (_dragging || e.shiftKey || ((e.which !== 1) && (e.button !== 1) && !e.touches)) { return; }
-		_dragging = this;  // Prevent dragging multiple objects at once.
+		if (Draggable._dragging || e.shiftKey || ((e.which !== 1) && (e.button !== 1) && !e.touches)) { return; }
+		Draggable._dragging = this;  // Prevent dragging multiple objects at once.
 
 		if (this._preventOutline) {
 			DomUtil.preventOutline(this._element);
@@ -109,9 +112,13 @@ export var Draggable = Evented.extend({
 		// Fired when a drag is about to start.
 		this.fire('down');
 
-		var first = e.touches ? e.touches[0] : e;
+		var first = e.touches ? e.touches[0] : e,
+		    sizedParent = DomUtil.getSizedParentNode(this._element);
 
 		this._startPoint = new Point(first.clientX, first.clientY);
+
+		// Cache the scale, so that we can continuously compensate for it during drag (_onMove).
+		this._parentScale = DomUtil.getScale(sizedParent);
 
 		DomEvent.on(document, MOVE[e.type], this._onMove, this);
 		DomEvent.on(document, END[e.type], this._onUp, this);
@@ -131,11 +138,16 @@ export var Draggable = Evented.extend({
 		}
 
 		var first = (e.touches && e.touches.length === 1 ? e.touches[0] : e),
-		    newPoint = new Point(first.clientX, first.clientY),
-		    offset = newPoint.subtract(this._startPoint);
+		    offset = new Point(first.clientX, first.clientY)._subtract(this._startPoint);
 
 		if (!offset.x && !offset.y) { return; }
 		if (Math.abs(offset.x) + Math.abs(offset.y) < this.options.clickTolerance) { return; }
+
+		// We assume that the parent container's position, border and scale do not change for the duration of the drag.
+		// Therefore there is no need to account for the position and border (they are eliminated by the subtraction)
+		// and we can use the cached value for the scale.
+		offset.x /= this._parentScale.x;
+		offset.y /= this._parentScale.y;
 
 		DomEvent.preventDefault(e);
 
@@ -152,7 +164,7 @@ export var Draggable = Evented.extend({
 			this._lastTarget = e.target || e.srcElement;
 			// IE and Edge do not give the <use> element, so fetch it
 			// if necessary
-			if ((window.SVGElementInstance) && (this._lastTarget instanceof SVGElementInstance)) {
+			if (window.SVGElementInstance && this._lastTarget instanceof window.SVGElementInstance) {
 				this._lastTarget = this._lastTarget.correspondingUseElement;
 			}
 			DomUtil.addClass(this._lastTarget, 'leaflet-drag-target');
@@ -218,7 +230,7 @@ export var Draggable = Evented.extend({
 		}
 
 		this._moving = false;
-		_dragging = false;
+		Draggable._dragging = false;
 	}
 
 });

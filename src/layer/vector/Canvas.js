@@ -39,7 +39,7 @@ import {Bounds} from '../../geometry/Bounds';
 
 export var Canvas = Renderer.extend({
 	getEvents: function () {
-		var events = L.Renderer.prototype.getEvents.call(this);
+		var events = Renderer.prototype.getEvents.call(this);
 		events.viewprereset = this._onViewPreReset;
 		return events;
 	},
@@ -60,11 +60,19 @@ export var Canvas = Renderer.extend({
 	_initContainer: function () {
 		var container = this._container = document.createElement('canvas');
 
-		DomEvent.on(container, 'mousemove', Util.throttle(this._onMouseMove, 32, this), this);
+		DomEvent.on(container, 'mousemove', this._onMouseMove, this);
 		DomEvent.on(container, 'click dblclick mousedown mouseup contextmenu', this._onClick, this);
 		DomEvent.on(container, 'mouseout', this._handleMouseOut, this);
 
 		this._ctx = container.getContext('2d');
+	},
+
+	_destroyContainer: function () {
+		Util.cancelAnimFrame(this._redrawRequest);
+		delete this._ctx;
+		DomUtil.remove(this._container);
+		DomEvent.off(this._container);
+		delete this._container;
 	},
 
 	_updatePaths: function () {
@@ -81,8 +89,6 @@ export var Canvas = Renderer.extend({
 
 	_update: function () {
 		if (this._map._animatingZoom && this._bounds) { return; }
-
-		this._drawnLayers = {};
 
 		Renderer.prototype._update.call(this);
 
@@ -111,7 +117,7 @@ export var Canvas = Renderer.extend({
 	},
 
 	_reset: function () {
-		L.Renderer.prototype._reset.call(this);
+		Renderer.prototype._reset.call(this);
 
 		if (this._postponeUpdatePaths) {
 			this._postponeUpdatePaths = false;
@@ -155,7 +161,7 @@ export var Canvas = Renderer.extend({
 
 		delete layer._order;
 
-		delete this._layers[L.stamp(layer)];
+		delete this._layers[Util.stamp(layer)];
 
 		this._requestRedraw(layer);
 	},
@@ -177,14 +183,20 @@ export var Canvas = Renderer.extend({
 	},
 
 	_updateDashArray: function (layer) {
-		if (layer.options.dashArray) {
-			var parts = layer.options.dashArray.split(','),
+		if (typeof layer.options.dashArray === 'string') {
+			var parts = layer.options.dashArray.split(/[, ]+/),
 			    dashArray = [],
+			    dashValue,
 			    i;
 			for (i = 0; i < parts.length; i++) {
-				dashArray.push(Number(parts[i]));
+				dashValue = Number(parts[i]);
+				// Ignore dash array containing invalid lengths
+				if (isNaN(dashValue)) { return; }
+				dashArray.push(dashValue);
 			}
 			layer.options._dashArray = dashArray;
+		} else {
+			layer.options._dashArray = layer.options.dashArray;
 		}
 	},
 
@@ -196,10 +208,12 @@ export var Canvas = Renderer.extend({
 	},
 
 	_extendRedrawBounds: function (layer) {
-		var padding = (layer.options.weight || 0) + 1;
-		this._redrawBounds = this._redrawBounds || new Bounds();
-		this._redrawBounds.extend(layer._pxBounds.min.subtract([padding, padding]));
-		this._redrawBounds.extend(layer._pxBounds.max.add([padding, padding]));
+		if (layer._pxBounds) {
+			var padding = (layer.options.weight || 0) + 1;
+			this._redrawBounds = this._redrawBounds || new Bounds();
+			this._redrawBounds.extend(layer._pxBounds.min.subtract([padding, padding]));
+			this._redrawBounds.extend(layer._pxBounds.max.add([padding, padding]));
+		}
 	},
 
 	_redraw: function () {
@@ -222,7 +236,10 @@ export var Canvas = Renderer.extend({
 			var size = bounds.getSize();
 			this._ctx.clearRect(bounds.min.x, bounds.min.y, size.x, size.y);
 		} else {
+			this._ctx.save();
+			this._ctx.setTransform(1, 0, 0, 1, 0, 0);
 			this._ctx.clearRect(0, 0, this._container.width, this._container.height);
+			this._ctx.restore();
 		}
 	},
 
@@ -260,13 +277,7 @@ export var Canvas = Renderer.extend({
 
 		if (!len) { return; }
 
-		this._drawnLayers[layer._leaflet_id] = layer;
-
 		ctx.beginPath();
-
-		if (ctx.setLineDash) {
-			ctx.setLineDash(layer.options && layer.options._dashArray || []);
-		}
 
 		for (i = 0; i < len; i++) {
 			for (j = 0, len2 = parts[i].length; j < len2; j++) {
@@ -289,10 +300,8 @@ export var Canvas = Renderer.extend({
 
 		var p = layer._point,
 		    ctx = this._ctx,
-		    r = layer._radius,
-		    s = (layer._radiusY || r) / r;
-
-		this._drawnLayers[layer._leaflet_id] = layer;
+		    r = Math.max(Math.round(layer._radius), 1),
+		    s = (Math.max(Math.round(layer._radiusY), 1) || r) / r;
 
 		if (s !== 1) {
 			ctx.save();
@@ -319,6 +328,9 @@ export var Canvas = Renderer.extend({
 		}
 
 		if (options.stroke && options.weight !== 0) {
+			if (ctx.setLineDash) {
+				ctx.setLineDash(layer.options && layer.options._dashArray || []);
+			}
 			ctx.globalAlpha = options.opacity;
 			ctx.lineWidth = options.weight;
 			ctx.strokeStyle = options.color;
@@ -336,8 +348,10 @@ export var Canvas = Renderer.extend({
 
 		for (var order = this._drawFirst; order; order = order.next) {
 			layer = order.layer;
-			if (layer.options.interactive && layer._containsPoint(point) && !this._map._draggableMoved(layer)) {
-				clickedLayer = layer;
+			if (layer.options.interactive && layer._containsPoint(point)) {
+				if (!(e.type === 'click' || e.type !== 'preclick') || !this._map._draggableMoved(layer)) {
+					clickedLayer = layer;
+				}
 			}
 		}
 		if (clickedLayer)  {
@@ -361,10 +375,15 @@ export var Canvas = Renderer.extend({
 			DomUtil.removeClass(this._container, 'leaflet-interactive');
 			this._fireEvent([layer], e, 'mouseout');
 			this._hoveredLayer = null;
+			this._mouseHoverThrottled = false;
 		}
 	},
 
 	_handleMouseHover: function (e, point) {
+		if (this._mouseHoverThrottled) {
+			return;
+		}
+
 		var layer, candidateHoveredLayer;
 
 		for (var order = this._drawFirst; order; order = order.next) {
@@ -387,6 +406,11 @@ export var Canvas = Renderer.extend({
 		if (this._hoveredLayer) {
 			this._fireEvent([this._hoveredLayer], e);
 		}
+
+		this._mouseHoverThrottled = true;
+		setTimeout(Util.bind(function () {
+			this._mouseHoverThrottled = false;
+		}, this), 32);
 	},
 
 	_fireEvent: function (layers, e, type) {
@@ -395,6 +419,9 @@ export var Canvas = Renderer.extend({
 
 	_bringToFront: function (layer) {
 		var order = layer._order;
+
+		if (!order) { return; }
+
 		var next = order.next;
 		var prev = order.prev;
 
@@ -408,7 +435,7 @@ export var Canvas = Renderer.extend({
 			prev.next = next;
 		} else if (next) {
 			// Update first entry unless this is the
-			// signle entry
+			// single entry
 			this._drawFirst = next;
 		}
 
@@ -423,6 +450,9 @@ export var Canvas = Renderer.extend({
 
 	_bringToBack: function (layer) {
 		var order = layer._order;
+
+		if (!order) { return; }
+
 		var next = order.next;
 		var prev = order.prev;
 
@@ -436,7 +466,7 @@ export var Canvas = Renderer.extend({
 			next.prev = prev;
 		} else if (prev) {
 			// Update last entry unless this is the
-			// signle entry
+			// single entry
 			this._drawLast = prev;
 		}
 

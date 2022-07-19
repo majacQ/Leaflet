@@ -36,9 +36,9 @@ export var IconDefault = Icon.extend({
 		}
 
 		// @option imagePath: String
-		// `Icon.Default` will try to auto-detect the absolute location of the
+		// `Icon.Default` will try to auto-detect the location of the
 		// blue icon images. If you are placing these images in a non-standard
-		// way, set this option to point to the right absolute path.
+		// way, set this option to point to the right path.
 		return (this.options.imagePath || IconDefault.imagePath) + Icon.prototype._getIconUrl.call(this, name);
 	},
 
@@ -49,7 +49,12 @@ export var IconDefault = Icon.extend({
 
 		document.body.removeChild(el);
 
-		return path.indexOf('url') === 0 ?
-			path.replace(/^url\([\"\']?/, '').replace(/marker-icon\.png[\"\']?\)$/, '') : '';
+		if (path === null || path.indexOf('url') !== 0) {
+			path = '';
+		} else {
+			path = path.replace(/^url\(["']?/, '').replace(/marker-icon\.png["']?\)$/, '');
+		}
+
+		return path;
 	}
 });

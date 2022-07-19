@@ -4,7 +4,6 @@ import * as DomUtil from '../dom/DomUtil';
 import {Point, toPoint} from '../geometry/Point';
 import {Map} from '../map/Map';
 import {Layer} from './Layer';
-import {FeatureGroup} from './FeatureGroup';
 import * as Util from '../core/Util';
 import {Path} from './vector/Path';
 
@@ -84,9 +83,17 @@ export var Popup = DivOverlay.extend({
 
 		// @option autoClose: Boolean = true
 		// Set it to `false` if you want to override the default behavior of
-		// the popup closing when user clicks the map (set globally by
-		// the Map's [closePopupOnClick](#map-closepopuponclick) option).
+		// the popup closing when another popup is opened.
 		autoClose: true,
+
+		// @option closeOnEscapeKey: Boolean = true
+		// Set it to `false` if you want to override the default behavior of
+		// the ESC key for closing of the popup.
+		closeOnEscapeKey: true,
+
+		// @option closeOnClick: Boolean = *
+		// Set it if you want to override the default behavior of the popup closing when user clicks
+		// on the map. Defaults to the map's [`closePopupOnClick`](#map-closepopuponclick) option.
 
 		// @option className: String = ''
 		// A custom CSS class name to assign to the popup.
@@ -148,7 +155,7 @@ export var Popup = DivOverlay.extend({
 	getEvents: function () {
 		var events = DivOverlay.prototype.getEvents.call(this);
 
-		if ('closeOnClick' in this.options ? this.options.closeOnClick : this._map.options.closePopupOnClick) {
+		if (this.options.closeOnClick !== undefined ? this.options.closeOnClick : this._map.options.closePopupOnClick) {
 			events.preclick = this._close;
 		}
 
@@ -171,6 +178,16 @@ export var Popup = DivOverlay.extend({
 			prefix + ' ' + (this.options.className || '') +
 			' leaflet-zoom-animated');
 
+		var wrapper = this._wrapper = DomUtil.create('div', prefix + '-content-wrapper', container);
+		this._contentNode = DomUtil.create('div', prefix + '-content', wrapper);
+
+		DomEvent.disableClickPropagation(container);
+		DomEvent.disableScrollPropagation(this._contentNode);
+		DomEvent.on(container, 'contextmenu', DomEvent.stopPropagation);
+
+		this._tipContainer = DomUtil.create('div', prefix + '-tip-container', container);
+		this._tip = DomUtil.create('div', prefix + '-tip', this._tipContainer);
+
 		if (this.options.closeButton) {
 			var closeButton = this._closeButton = DomUtil.create('a', prefix + '-close-button', container);
 			closeButton.href = '#close';
@@ -178,16 +195,6 @@ export var Popup = DivOverlay.extend({
 
 			DomEvent.on(closeButton, 'click', this._onCloseButtonClick, this);
 		}
-
-		var wrapper = this._wrapper = DomUtil.create('div', prefix + '-content-wrapper', container);
-		this._contentNode = DomUtil.create('div', prefix + '-content', wrapper);
-
-		DomEvent.disableClickPropagation(wrapper);
-		DomEvent.disableScrollPropagation(this._contentNode);
-		DomEvent.on(wrapper, 'contextmenu', DomEvent.stopPropagation);
-
-		this._tipContainer = DomUtil.create('div', prefix + '-tip-container', container);
-		this._tip = DomUtil.create('div', prefix + '-tip', this._tipContainer);
 	},
 
 	_updateLayout: function () {
@@ -227,7 +234,8 @@ export var Popup = DivOverlay.extend({
 	},
 
 	_adjustPan: function () {
-		if (!this.options.autoPan || (this._map._panAnim && this._map._panAnim._inProgress)) { return; }
+		if (!this.options.autoPan) { return; }
+		if (this._map._panAnim) { this._map._panAnim.stop(); }
 
 		var map = this._map,
 		    marginBottom = parseInt(DomUtil.getStyle(this._container, 'marginBottom'), 10) || 0,
@@ -362,7 +370,7 @@ Layer.include({
 
 	// @method bindPopup(content: String|HTMLElement|Function|Popup, options?: Popup options): this
 	// Binds a popup to the layer with the passed `content` and sets up the
-	// neccessary event listeners. If a `Function` is passed it will receive
+	// necessary event listeners. If a `Function` is passed it will receive
 	// the layer as the first argument and should return a `String` or `HTMLElement`.
 	bindPopup: function (content, options) {
 
@@ -380,6 +388,7 @@ Layer.include({
 		if (!this._popupHandlersAdded) {
 			this.on({
 				click: this._openPopup,
+				keypress: this._onKeyPress,
 				remove: this.closePopup,
 				move: this._movePopup
 			});
@@ -395,6 +404,7 @@ Layer.include({
 		if (this._popup) {
 			this.off({
 				click: this._openPopup,
+				keypress: this._onKeyPress,
 				remove: this.closePopup,
 				move: this._movePopup
 			});
@@ -405,30 +415,10 @@ Layer.include({
 	},
 
 	// @method openPopup(latlng?: LatLng): this
-	// Opens the bound popup at the specificed `latlng` or at the default popup anchor if no `latlng` is passed.
+	// Opens the bound popup at the specified `latlng` or at the default popup anchor if no `latlng` is passed.
 	openPopup: function (layer, latlng) {
-		if (!(layer instanceof Layer)) {
-			latlng = layer;
-			layer = this;
-		}
-
-		if (layer instanceof FeatureGroup) {
-			for (var id in this._layers) {
-				layer = this._layers[id];
-				break;
-			}
-		}
-
-		if (!latlng) {
-			latlng = layer.getCenter ? layer.getCenter() : layer.getLatLng();
-		}
-
 		if (this._popup && this._map) {
-			// set popup source to this layer
-			this._popup._source = layer;
-
-			// update the popup (content, layout, ect...)
-			this._popup.update();
+			latlng = this._popup._prepareOpen(this, layer, latlng);
 
 			// open the popup on the map
 			this._map.openPopup(this._popup, latlng);
@@ -512,5 +502,11 @@ Layer.include({
 
 	_movePopup: function (e) {
 		this._popup.setLatLng(e.latlng);
+	},
+
+	_onKeyPress: function (e) {
+		if (e.originalEvent.keyCode === 13) {
+			this._openPopup(e);
+		}
 	}
 });

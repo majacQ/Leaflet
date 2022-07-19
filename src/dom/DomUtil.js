@@ -16,18 +16,20 @@ import * as Browser from '../core/Browser';
 
 
 // @property TRANSFORM: String
-// Vendor-prefixed fransform style name (e.g. `'webkitTransform'` for WebKit).
+// Vendor-prefixed transform style name (e.g. `'webkitTransform'` for WebKit).
 export var TRANSFORM = testProp(
-	['transform', 'WebkitTransform', 'OTransform', 'MozTransform', 'msTransform']);
+	['transform', 'webkitTransform', 'OTransform', 'MozTransform', 'msTransform']);
 
 // webkitTransition comes first because some browser versions that drop vendor prefix don't do
 // the same for the transitionend event, in particular the Android 4.1 stock browser
 
 // @property TRANSITION: String
-// Vendor-prefixed transform style name.
+// Vendor-prefixed transition style name.
 export var TRANSITION = testProp(
 	['webkitTransition', 'transition', 'OTransition', 'MozTransition', 'msTransition']);
 
+// @property TRANSITION_END: String
+// Vendor-prefixed transitionend event name.
 export var TRANSITION_END =
 	TRANSITION === 'webkitTransition' || TRANSITION === 'OTransition' ? TRANSITION + 'End' : 'transitionend';
 
@@ -84,14 +86,19 @@ export function empty(el) {
 // @function toFront(el: HTMLElement)
 // Makes `el` the last child of its parent, so it renders in front of the other children.
 export function toFront(el) {
-	el.parentNode.appendChild(el);
+	var parent = el.parentNode;
+	if (parent && parent.lastChild !== el) {
+		parent.appendChild(el);
+	}
 }
 
 // @function toBack(el: HTMLElement)
 // Makes `el` the first child of its parent, so it renders behind the other children.
 export function toBack(el) {
 	var parent = el.parentNode;
-	parent.insertBefore(el, parent.firstChild);
+	if (parent && parent.firstChild !== el) {
+		parent.insertBefore(el, parent.firstChild);
+	}
 }
 
 // @function hasClass(el: HTMLElement, name: String): Boolean
@@ -142,6 +149,11 @@ export function setClass(el, name) {
 // @function getClass(el: HTMLElement): String
 // Returns the element's class.
 export function getClass(el) {
+	// Check if the element is an SVGElementInstance and use the correspondingElement instead
+	// (Required for linked SVG elements in IE11.)
+	if (el.correspondingElement) {
+		el = el.correspondingElement;
+	}
 	return el.className.baseVal === undefined ? el.className : el.className.baseVal;
 }
 
@@ -216,7 +228,7 @@ export function setPosition(el, point) {
 
 	/*eslint-disable */
 	el._leaflet_pos = point;
-	/*eslint-enable */
+	/* eslint-enable */
 
 	if (Browser.any3d) {
 		setTransform(el, point);
@@ -295,7 +307,7 @@ export function preventOutline(element) {
 	while (element.tabIndex === -1) {
 		element = element.parentNode;
 	}
-	if (!element || !element.style) { return; }
+	if (!element.style) { return; }
 	restoreOutline();
 	_outlineElement = element;
 	_outlineStyle = element.style.outline;
@@ -311,4 +323,27 @@ export function restoreOutline() {
 	_outlineElement = undefined;
 	_outlineStyle = undefined;
 	DomEvent.off(window, 'keydown', restoreOutline);
+}
+
+// @function getSizedParentNode(el: HTMLElement): HTMLElement
+// Finds the closest parent node which size (width and height) is not null.
+export function getSizedParentNode(element) {
+	do {
+		element = element.parentNode;
+	} while ((!element.offsetWidth || !element.offsetHeight) && element !== document.body);
+	return element;
+}
+
+// @function getScale(el: HTMLElement): Object
+// Computes the CSS scale currently applied on the element.
+// Returns an object with `x` and `y` members as horizontal and vertical scales respectively,
+// and `boundingClientRect` as the result of [`getBoundingClientRect()`](https://developer.mozilla.org/en-US/docs/Web/API/Element/getBoundingClientRect).
+export function getScale(element) {
+	var rect = element.getBoundingClientRect(); // Read-only in old browsers.
+
+	return {
+		x: rect.width / element.offsetWidth || 1,
+		y: rect.height / element.offsetHeight || 1,
+		boundingClientRect: rect
+	};
 }
