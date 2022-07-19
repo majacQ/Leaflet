@@ -1,11 +1,12 @@
-import {Point} from './Point';
+import {Point, toPoint} from './Point';
 import * as Util from '../core/Util';
+import {toLatLng} from '../geo/LatLng';
 
 
 /*
  * @namespace LineUtil
  *
- * Various utility functions for polyine points processing, used by Leaflet internally to make polylines lightning-fast.
+ * Various utility functions for polyline points processing, used by Leaflet internally to make polylines lightning-fast.
  */
 
 // Simplify polyline with vertex reduction and Douglas-Peucker simplification.
@@ -14,11 +15,11 @@ import * as Util from '../core/Util';
 // @function simplify(points: Point[], tolerance: Number): Point[]
 // Dramatically reduces the number of points in a polyline while retaining
 // its shape and returns a new array of simplified points, using the
-// [Douglas-Peucker algorithm](http://en.wikipedia.org/wiki/Douglas-Peucker_algorithm).
+// [Ramer-Douglas-Peucker algorithm](https://en.wikipedia.org/wiki/Ramer-Douglas-Peucker_algorithm).
 // Used for a huge performance boost when processing/displaying Leaflet polylines for
 // each zoom level and also reducing visual noise. tolerance affects the amount of
 // simplification (lesser value means higher quality but slower and with more points).
-// Also released as a separated micro-library [Simplify.js](http://mourner.github.com/simplify-js/).
+// Also released as a separated micro-library [Simplify.js](https://mourner.github.io/simplify-js/).
 export function simplify(points, tolerance) {
 	if (!tolerance || !points.length) {
 		return points.slice();
@@ -47,7 +48,7 @@ export function closestPointOnSegment(p, p1, p2) {
 	return _sqClosestPointOnSegment(p, p1, p2);
 }
 
-// Douglas-Peucker simplification, see http://en.wikipedia.org/wiki/Douglas-Peucker_algorithm
+// Ramer-Douglas-Peucker simplification, see https://en.wikipedia.org/wiki/Ramer-Douglas-Peucker_algorithm
 function _simplifyDP(points, sqTolerance) {
 
 	var len = points.length,
@@ -230,7 +231,62 @@ export function _sqClosestPointOnSegment(p, p1, p2, sqDist) {
 }
 
 
-export function _flat(latlngs) {
-	// true if it's a flat array of latlngs; false if nested
+// @function isFlat(latlngs: LatLng[]): Boolean
+// Returns true if `latlngs` is a flat array, false is nested.
+export function isFlat(latlngs) {
 	return !Util.isArray(latlngs[0]) || (typeof latlngs[0][0] !== 'object' && typeof latlngs[0][0] !== 'undefined');
+}
+
+export function _flat(latlngs) {
+	console.warn('Deprecated use of _flat, please use L.LineUtil.isFlat instead.');
+	return isFlat(latlngs);
+}
+
+/* @function polylineCenter(latlngs: LatLng[], crs: CRS, zoom: Number): LatLng
+ * Returns the center ([centroid](http://en.wikipedia.org/wiki/Centroid)) of the passed LatLngs (first ring) from a polyline.
+ */
+export function polylineCenter(latlngs, crs, zoom) {
+	var i, halfDist, segDist, dist, p1, p2, ratio, center;
+
+	if (!latlngs || latlngs.length === 0) {
+		throw new Error('latlngs not passed');
+	}
+
+	if (!isFlat(latlngs)) {
+		console.warn('latlngs are not flat! Only the first ring will be used');
+		latlngs = latlngs[0];
+	}
+
+	var points = [];
+	for (var j in latlngs) {
+		points.push(crs.latLngToPoint(toLatLng(latlngs[j]), zoom));
+	}
+
+	var len = points.length;
+
+	for (i = 0, halfDist = 0; i < len - 1; i++) {
+		halfDist += points[i].distanceTo(points[i + 1]) / 2;
+	}
+
+	// The line is so small in the current view that all points are on the same pixel.
+	if (halfDist === 0) {
+		center = points[0];
+	} else {
+		for (i = 0, dist = 0; i < len - 1; i++) {
+			p1 = points[i];
+			p2 = points[i + 1];
+			segDist = p1.distanceTo(p2);
+			dist += segDist;
+
+			if (dist > halfDist) {
+				ratio = (dist - halfDist) / segDist;
+				center = [
+					p2.x - ratio * (p2.x - p1.x),
+					p2.y - ratio * (p2.y - p1.y)
+				];
+				break;
+			}
+		}
+	}
+	return crs.pointToLatLng(toPoint(center), zoom);
 }

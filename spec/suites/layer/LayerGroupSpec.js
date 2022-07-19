@@ -1,10 +1,14 @@
 ﻿describe('LayerGroup', function () {
 	describe("#hasLayer", function () {
-		it("returns false when passed undefined, null, or false", function () {
+		it("throws when called without proper argument", function () {
 			var lg = L.layerGroup();
-			expect(lg.hasLayer(undefined)).to.equal(false);
-			expect(lg.hasLayer(null)).to.equal(false);
-			expect(lg.hasLayer(false)).to.equal(false);
+			var hasLayer = L.Util.bind(lg.hasLayer, lg);
+			expect(hasLayer).withArgs(new L.Layer()).to.not.throwException(); // control case
+
+			expect(hasLayer).withArgs(undefined).to.throwException();
+			expect(hasLayer).withArgs(null).to.throwException();
+			expect(hasLayer).withArgs(false).to.throwException();
+			expect(hasLayer).to.throwException();
 		});
 	});
 
@@ -90,6 +94,22 @@
 			layerGroup.addLayer(layer);
 
 			L.geoJson(layerGroup.toGeoJSON());
+		});
+	});
+
+	describe("#invoke", function () {
+		it('should invoke `setOpacity` method on every layer', function () {
+			var layers = [
+				L.marker([0, 0]),
+				L.marker([1, 1])
+			];
+			var lg = L.layerGroup(layers);
+			var opacity = 0.5;
+
+			expect(layers[0].options.opacity).to.not.eql(opacity);
+			lg.invoke('setOpacity', opacity);
+			expect(layers[0].options.opacity).to.eql(opacity);
+			expect(layers[1].options.opacity).to.eql(opacity);
 		});
 	});
 });

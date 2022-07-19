@@ -1,5 +1,4 @@
 import {Map} from '../Map';
-import * as Browser from '../../core/Browser';
 import {Handler} from '../../core/Handler';
 import {Draggable} from '../../dom/Draggable';
 import * as Util from '../../core/Util';
@@ -15,7 +14,7 @@ import {toBounds} from '../../geometry/Bounds';
 // @section Interaction Options
 Map.mergeOptions({
 	// @option dragging: Boolean = true
-	// Whether the map be draggable with mouse/touch or not.
+	// Whether the map is draggable with mouse/touch or not.
 	dragging: true,
 
 	// @section Panning Inertia Options
@@ -23,8 +22,8 @@ Map.mergeOptions({
 	// If enabled, panning of the map will have an inertia effect where
 	// the map builds momentum while dragging and continues moving in
 	// the same direction for some time. Feels especially nice on touch
-	// devices. Enabled by default unless running on old Android devices.
-	inertia: !Browser.android23,
+	// devices. Enabled by default.
+	inertia: true,
 
 	// @option inertiaDeceleration: Number = 3000
 	// The rate with which the inertial movement slows down, in pixels/second².
@@ -36,13 +35,6 @@ Map.mergeOptions({
 
 	// @option easeLinearity: Number = 0.2
 	easeLinearity: 0.2,
-
-	// TODO refactor, move to CRS
-	// @option worldCopyJump: Boolean = false
-	// With this option enabled, the map tracks when you pan to another "copy"
-	// of the world and seamlessly jumps to the original one so that all overlays
-	// like markers and vector layers are still visible.
-	worldCopyJump: false,
 
 	// @option maxBoundsViscosity: Number = 0.0
 	// If `maxBounds` is set, this option will control how solid the bounds
@@ -129,15 +121,19 @@ export var Drag = Handler.extend({
 			this._positions.push(pos);
 			this._times.push(time);
 
-			if (time - this._times[0] > 50) {
-				this._positions.shift();
-				this._times.shift();
-			}
+			this._prunePositions(time);
 		}
 
 		this._map
 		    .fire('move', e)
 		    .fire('drag', e);
+	},
+
+	_prunePositions: function (time) {
+		while (this._positions.length > 1 && time - this._times[0] > 50) {
+			this._positions.shift();
+			this._times.shift();
+		}
 	},
 
 	_onZoomEnd: function () {
@@ -167,7 +163,6 @@ export var Drag = Handler.extend({
 	},
 
 	_onPreDragWrap: function () {
-		// TODO refactor to be able to adjust map pane position after zoom
 		var worldWidth = this._worldWidth,
 		    halfWidth = Math.round(worldWidth / 2),
 		    dx = this._initialWorldOffset,
@@ -184,7 +179,7 @@ export var Drag = Handler.extend({
 		var map = this._map,
 		    options = map.options,
 
-		    noInertia = !options.inertia || this._times.length < 2;
+		    noInertia = !options.inertia || e.noInertia || this._times.length < 2;
 
 		map.fire('dragend', e);
 
@@ -192,6 +187,7 @@ export var Drag = Handler.extend({
 			map.fire('moveend');
 
 		} else {
+			this._prunePositions(+new Date());
 
 			var direction = this._lastPos.subtract(this._positions[0]),
 			    duration = (this._lastTime - this._times[0]) / 1000,

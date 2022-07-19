@@ -9,7 +9,7 @@
 		<link rel="stylesheet" href="../../dist/leaflet.css" />
 
 		<link rel="stylesheet" href="../css/screen.css" />
-		<script src="../leaflet-include.js"></script>
+		<script src="../../dist/leaflet-src.js"></script>
 	</head>
 	<body>
 		<p>
@@ -19,14 +19,14 @@
 		<button id="foo">
 			Click to enable dragging on the right map, then dragging around and watch copying
 		</button><br>
-		<div id="map1" style="height: 300px;width: 400px; float:left;"></div>
-		<div id="map2" style="height: 300px;width: 400px; float:left; margin-left: 10px;"></div>
+		<div id="map1" style="height: 300px;width: 40vw; float:left;"></div>
+		<div id="map2" style="height: 300px;width: 40vw; float:left; margin-left: 10px;"></div>
 		<div style="clear:both"></div>
 
 
 		<script>
 			function addLayerAndMarker(map) {
-				var layer = new L.TileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png', {
+				var layer = new L.TileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 					maxZoom : 18
 				}).addTo(map);
 
