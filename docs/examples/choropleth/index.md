@@ -31,14 +31,13 @@ The GeoJSON with state shapes was kindly shared by [Mike Bostock](http://bost.oc
 
 ### Basic States Map
 
-Let's display our states data on a map with a custom Mapbox style for nice grayscale tiles that look perfect as a background for visualizations:
+Let's display our states data on the map:
 
-	var mapboxAccessToken = {your access token here};
 	var map = L.map('map').setView([37.8, -96], 4);
 
-	L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token=' + mapboxAccessToken, {
-		id: 'mapbox.light',
-		attribution: ...
+	var tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+		maxZoom: 19,
+		attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 	}).addTo(map);
 
 	L.geoJson(statesData).addTo(map);
@@ -228,5 +227,3 @@ CSS styles for the control (we also reuse the `info` class defined earlier):
 	}
 
 Enjoy the result on the top of this page, or on a [separate page](example.html).
-
-
