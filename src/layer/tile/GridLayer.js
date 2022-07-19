@@ -85,8 +85,11 @@ export var GridLayer = Layer.extend({
 		// Opacity of the tiles. Can be used in the `createTile()` function.
 		opacity: 1,
 
-		// @option updateWhenIdle: Boolean = depends
-		// If `false`, new tiles are loaded during panning, otherwise only after it (for better performance). `true` by default on mobile browsers, otherwise `false`.
+		// @option updateWhenIdle: Boolean = (depends)
+		// Load new tiles only when panning ends.
+		// `true` by default on mobile browsers, in order to avoid too many requests and keep smooth navigation.
+		// `false` otherwise in order to display new tiles _during_ panning, since it is easy to pan outside the
+		// [`keepBuffer`](#gridlayer-keepbuffer) option in desktop browsers.
 		updateWhenIdle: Browser.mobile,
 
 		// @option updateWhenZooming: Boolean = true
@@ -106,12 +109,24 @@ export var GridLayer = Layer.extend({
 		bounds: null,
 
 		// @option minZoom: Number = 0
-		// The minimum zoom level that tiles will be loaded at. By default the entire map.
+		// The minimum zoom level down to which this layer will be displayed (inclusive).
 		minZoom: 0,
 
 		// @option maxZoom: Number = undefined
-		// The maximum zoom level that tiles will be loaded at.
+		// The maximum zoom level up to which this layer will be displayed (inclusive).
 		maxZoom: undefined,
+
+		// @option maxNativeZoom: Number = undefined
+		// Maximum zoom number the tile source has available. If it is specified,
+		// the tiles on all zoom levels higher than `maxNativeZoom` will be loaded
+		// from `maxNativeZoom` level and auto-scaled.
+		maxNativeZoom: undefined,
+
+		// @option minNativeZoom: Number = undefined
+		// Minimum zoom number the tile source has available. If it is specified,
+		// the tiles on all zoom levels lower than `minNativeZoom` will be loaded
+		// from `minNativeZoom` level and auto-scaled.
+		minNativeZoom: undefined,
 
 		// @option noWrap: Boolean = false
 		// Whether the layer is wrapped around the antimeridian. If `true`, the
@@ -157,7 +172,7 @@ export var GridLayer = Layer.extend({
 		DomUtil.remove(this._container);
 		map._removeZoomLimit(this);
 		this._container = null;
-		this._tileZoom = null;
+		this._tileZoom = undefined;
 	},
 
 	// @method bringToFront: this
@@ -246,7 +261,7 @@ export var GridLayer = Layer.extend({
 	// @section Extension methods
 	// Layers extending `GridLayer` shall reimplement the following method.
 	// @method createTile(coords: Object, done?: Function): HTMLElement
-	// Called only internally, must be overriden by classes extending `GridLayer`.
+	// Called only internally, must be overridden by classes extending `GridLayer`.
 	// Returns the `HTMLElement` corresponding to the given `coords`. If the `done` callback
 	// is specified, it must be called when the tile has finished loading and drawing.
 	createTile: function () {
@@ -310,7 +325,11 @@ export var GridLayer = Layer.extend({
 			if (fade < 1) {
 				nextFrame = true;
 			} else {
-				if (tile.active) { willPrune = true; }
+				if (tile.active) {
+					willPrune = true;
+				} else {
+					this._onOpaqueTile(tile);
+				}
 				tile.active = true;
 			}
 		}
@@ -322,6 +341,8 @@ export var GridLayer = Layer.extend({
 			this._fadeFrame = Util.requestAnimFrame(this._updateOpacity, this);
 		}
 	},
+
+	_onOpaqueTile: Util.falseFn,
 
 	_initContainer: function () {
 		if (this._container) { return; }
@@ -344,11 +365,14 @@ export var GridLayer = Layer.extend({
 		if (zoom === undefined) { return undefined; }
 
 		for (var z in this._levels) {
+			z = Number(z);
 			if (this._levels[z].el.children.length || z === zoom) {
 				this._levels[z].el.style.zIndex = maxZoom - Math.abs(zoom - z);
+				this._onUpdateLevel(z);
 			} else {
 				DomUtil.remove(this._levels[z].el);
 				this._removeTilesAtZoom(z);
+				this._onRemoveLevel(z);
 				delete this._levels[z];
 			}
 		}
@@ -369,12 +393,20 @@ export var GridLayer = Layer.extend({
 
 			// force the browser to consider the newly added element for transition
 			Util.falseFn(level.el.offsetWidth);
+
+			this._onCreateLevel(level);
 		}
 
 		this._level = level;
 
 		return level;
 	},
+
+	_onUpdateLevel: Util.falseFn,
+
+	_onRemoveLevel: Util.falseFn,
+
+	_onCreateLevel: Util.falseFn,
 
 	_pruneTiles: function () {
 		if (!this._map) {
@@ -430,11 +462,12 @@ export var GridLayer = Layer.extend({
 	_invalidateAll: function () {
 		for (var z in this._levels) {
 			DomUtil.remove(this._levels[z].el);
+			this._onRemoveLevel(Number(z));
 			delete this._levels[z];
 		}
 		this._removeAllTiles();
 
-		this._tileZoom = null;
+		this._tileZoom = undefined;
 	},
 
 	_retainParent: function (x, y, z, minZoom) {
@@ -497,11 +530,27 @@ export var GridLayer = Layer.extend({
 		this._setView(e.center, e.zoom, true, e.noUpdate);
 	},
 
+	_clampZoom: function (zoom) {
+		var options = this.options;
+
+		if (undefined !== options.minNativeZoom && zoom < options.minNativeZoom) {
+			return options.minNativeZoom;
+		}
+
+		if (undefined !== options.maxNativeZoom && options.maxNativeZoom < zoom) {
+			return options.maxNativeZoom;
+		}
+
+		return zoom;
+	},
+
 	_setView: function (center, zoom, noPrune, noUpdate) {
 		var tileZoom = Math.round(zoom);
 		if ((this.options.maxZoom !== undefined && tileZoom > this.options.maxZoom) ||
 		    (this.options.minZoom !== undefined && tileZoom < this.options.minZoom)) {
 			tileZoom = undefined;
+		} else {
+			tileZoom = this._clampZoom(tileZoom);
 		}
 
 		var tileZoomChanged = this.options.updateWhenZooming && (tileZoom !== this._tileZoom);
@@ -592,7 +641,7 @@ export var GridLayer = Layer.extend({
 	_update: function (center) {
 		var map = this._map;
 		if (!map) { return; }
-		var zoom = map.getZoom();
+		var zoom = this._clampZoom(map.getZoom());
 
 		if (center === undefined) { center = map.getCenter(); }
 		if (this._tileZoom === undefined) { return; }	// if out of minzoom/maxzoom
@@ -604,6 +653,12 @@ export var GridLayer = Layer.extend({
 		    margin = this.options.keepBuffer,
 		    noPruneRange = new Bounds(tileRange.getBottomLeft().subtract([margin, -margin]),
 		                              tileRange.getTopRight().add([margin, -margin]));
+
+		// Sanity check: panic if the tile range contains Infinity somewhere.
+		if (!(isFinite(tileRange.min.x) &&
+		      isFinite(tileRange.min.y) &&
+		      isFinite(tileRange.max.x) &&
+		      isFinite(tileRange.max.y))) { throw new Error('Attempted to load an infinite number of tiles'); }
 
 		for (var key in this._tiles) {
 			var c = this._tiles[key].coords;
@@ -679,26 +734,26 @@ export var GridLayer = Layer.extend({
 		return this._tileCoordsToBounds(this._keyToTileCoords(key));
 	},
 
-	// converts tile coordinates to its geographical bounds
-	_tileCoordsToBounds: function (coords) {
-
+	_tileCoordsToNwSe: function (coords) {
 		var map = this._map,
 		    tileSize = this.getTileSize(),
-
 		    nwPoint = coords.scaleBy(tileSize),
 		    sePoint = nwPoint.add(tileSize),
-
 		    nw = map.unproject(nwPoint, coords.z),
-		    se = map.unproject(sePoint, coords.z),
-		    bounds = new LatLngBounds(nw, se);
-
-		if (!this.options.noWrap) {
-			map.wrapLatLngBounds(bounds);
-		}
-
-		return bounds;
+		    se = map.unproject(sePoint, coords.z);
+		return [nw, se];
 	},
 
+	// converts tile coordinates to its geographical bounds
+	_tileCoordsToBounds: function (coords) {
+		var bp = this._tileCoordsToNwSe(coords),
+		    bounds = new LatLngBounds(bp[0], bp[1]);
+
+		if (!this.options.noWrap) {
+			bounds = this._map.wrapLatLngBounds(bounds);
+		}
+		return bounds;
+	},
 	// converts tile coordinates to key for the tile cache
 	_tileCoordsToKey: function (coords) {
 		return coords.x + ':' + coords.y + ':' + coords.z;
@@ -784,8 +839,6 @@ export var GridLayer = Layer.extend({
 	},
 
 	_tileReady: function (coords, err, tile) {
-		if (!this._map) { return; }
-
 		if (err) {
 			// @event tileerror: TileErrorEvent
 			// Fired when there is an error loading a tile.

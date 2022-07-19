@@ -87,9 +87,15 @@ export var Circle = CircleMarker.extend({
 				lngR = latR / Math.cos(Math.PI / 180 * lat); // Fallback for edge case, #2425
 			}
 
+  <<<<<<< fix-circle-while-zooming
 			this._point = p.subtract(this._renderer._pixelOrigin);
 			this._radius = isNaN(lngR) ? 0 : Math.max(Math.round(p.x - map.project([lat2, lng - lngR], zoom).x, zoom), 1);
 			this._radiusY = Math.max(Math.round(p.y - top.y), 1);
+  =======
+			this._point = p.subtract(map.getPixelOrigin());
+			this._radius = isNaN(lngR) ? 0 : p.x - map.project([lat2, lng - lngR]).x;
+			this._radiusY = p.y - top.y;
+  >>>>>>> inline-defaulticon
 
 		} else {
 			var latlng2 = crs.unproject(crs.project(this._latlng).subtract([this._mRadius, 0]));

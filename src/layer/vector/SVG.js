@@ -1,6 +1,8 @@
 import {Renderer} from './Renderer';
 import * as DomUtil from '../../dom/DomUtil';
+import * as DomEvent from '../../dom/DomEvent';
 import * as Browser from '../../core/Browser';
+import {stamp} from '../../core/Util';
 import {svgCreate, pointsToPath} from './SVG.Util';
 export {pointsToPath};
 import {vmlMixin, vmlCreate} from './SVG.VML';
@@ -62,10 +64,11 @@ export var SVG = Renderer.extend({
 	},
 
 	_destroyContainer: function () {
-		L.DomUtil.remove(this._container);
-		L.DomEvent.off(this._container);
+		DomUtil.remove(this._container);
+		DomEvent.off(this._container);
 		delete this._container;
 		delete this._rootGroup;
+		delete this._svgSize;
 	},
 
 	_onZoomStart: function () {
@@ -115,10 +118,11 @@ export var SVG = Renderer.extend({
 		}
 
 		this._updateStyle(layer);
-		this._layers[L.stamp(layer)] = layer;
+		this._layers[stamp(layer)] = layer;
 	},
 
 	_addPath: function (layer) {
+		if (!this._rootGroup) { this._initContainer(); }
 		this._rootGroup.appendChild(layer._path);
 		layer.addInteractiveTarget(layer._path);
 	},
@@ -126,7 +130,7 @@ export var SVG = Renderer.extend({
 	_removePath: function (layer) {
 		DomUtil.remove(layer._path);
 		layer.removeInteractiveTarget(layer._path);
-		delete this._layers[L.stamp(layer)];
+		delete this._layers[stamp(layer)];
 	},
 
 	_updatePath: function (layer) {
@@ -177,15 +181,15 @@ export var SVG = Renderer.extend({
 
 	_updateCircle: function (layer) {
 		var p = layer._point,
-		    r = layer._radius,
-		    r2 = layer._radiusY || r,
+		    r = Math.max(Math.round(layer._radius), 1),
+		    r2 = Math.max(Math.round(layer._radiusY), 1) || r,
 		    arc = 'a' + r + ',' + r2 + ' 0 1,0 ';
 
 		// drawing a circle with two half-arcs
 		var d = layer._empty() ? 'M0 0' :
-				'M' + (p.x - r) + ',' + p.y +
-				arc + (r * 2) + ',0 ' +
-				arc + (-r * 2) + ',0 ';
+			'M' + (p.x - r) + ',' + p.y +
+			arc + (r * 2) + ',0 ' +
+			arc + (-r * 2) + ',0 ';
 
 		this._setPath(layer, d);
 	},
@@ -208,6 +212,7 @@ if (Browser.vml) {
 	SVG.include(vmlMixin);
 }
 
+// @namespace SVG
 // @factory L.svg(options?: Renderer options)
 // Creates a SVG renderer with the given options.
 export function svg(options) {

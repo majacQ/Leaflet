@@ -84,6 +84,8 @@ export var Polyline = Path.extend({
 		return !this._latlngs.length;
 	},
 
+	// @method closestLayerPoint(p: Point): Point
+	// Returns the point closest to `p` on the Polyline.
 	closestLayerPoint: function (p) {
 		var minDistance = Infinity,
 		    minPoint = null,
@@ -158,7 +160,7 @@ export var Polyline = Path.extend({
 		return this._bounds;
 	},
 
-	// @method addLatLng(latlng: LatLng, latlngs? LatLng[]): this
+	// @method addLatLng(latlng: LatLng, latlngs?: LatLng[]): this
 	// Adds a given point to the polyline. By default, adds to the first ring of
 	// the polyline in case of a multi-polyline, but can be overridden by passing
 	// a specific ring as a LatLng array (that you can earlier access with [`getLatLngs`](#polyline-getlatlngs)).
@@ -176,13 +178,13 @@ export var Polyline = Path.extend({
 	},
 
 	_defaultShape: function () {
-		return LineUtil._flat(this._latlngs) ? this._latlngs : this._latlngs[0];
+		return LineUtil.isFlat(this._latlngs) ? this._latlngs : this._latlngs[0];
 	},
 
 	// recursively convert latlngs input into actual LatLng instances; calculate bounds along the way
 	_convertLatLngs: function (latlngs) {
 		var result = [],
-		    flat = LineUtil._flat(latlngs);
+		    flat = LineUtil.isFlat(latlngs);
 
 		for (var i = 0, len = latlngs.length; i < len; i++) {
 			if (flat) {
@@ -201,14 +203,19 @@ export var Polyline = Path.extend({
 		this._rings = [];
 		this._projectLatlngs(this._latlngs, this._rings, pxBounds);
 
+		if (this._bounds.isValid() && pxBounds.isValid()) {
+			this._rawPxBounds = pxBounds;
+			this._updateBounds();
+		}
+	},
+
+	_updateBounds: function () {
 		var w = this._clickTolerance(),
 		    p = new Point(w, w);
-
-		if (this._bounds.isValid() && pxBounds.isValid()) {
-			pxBounds.min._subtract(p);
-			pxBounds.max._add(p);
-			this._pxBounds = pxBounds;
-		}
+		this._pxBounds = new Bounds([
+			this._rawPxBounds.min.subtract(p),
+			this._rawPxBounds.max.add(p)
+		]);
 	},
 
 	// recursively turns latlngs into a set of rings with projected coordinates
@@ -295,7 +302,7 @@ export var Polyline = Path.extend({
 		var i, j, k, len, len2, part,
 		    w = this._clickTolerance();
 
-		if (!this._pxBounds.contains(p)) { return false; }
+		if (!this._pxBounds || !this._pxBounds.contains(p)) { return false; }
 
 		// hit detection for polylines
 		for (i = 0, len = this._parts.length; i < len; i++) {
@@ -322,3 +329,5 @@ export function polyline(latlngs, options) {
 	return new Polyline(latlngs, options);
 }
 
+// Retrocompat. Allow plugins to support Leaflet versions before and after 1.1.
+Polyline._flat = LineUtil._flat;

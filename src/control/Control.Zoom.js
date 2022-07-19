@@ -26,9 +26,9 @@ export var Zoom = Control.extend({
 		// The title set on the 'zoom in' button.
 		zoomInTitle: 'Zoom in',
 
-		// @option zoomOutText: String = '-'
+		// @option zoomOutText: String = '&#x2212;'
 		// The text set on the 'zoom out' button.
-		zoomOutText: '-',
+		zoomOutText: '&#x2212;',
 
 		// @option zoomOutTitle: String = 'Zoom out'
 		// The title set on the 'zoom out' button.
@@ -91,7 +91,7 @@ export var Zoom = Control.extend({
 		link.setAttribute('role', 'button');
 		link.setAttribute('aria-label', title);
 
-		DomEvent.on(link, 'mousedown dblclick', DomEvent.stopPropagation);
+		DomEvent.disableClickPropagation(link);
 		DomEvent.on(link, 'click', DomEvent.stop);
 		DomEvent.on(link, 'click', fn, this);
 		DomEvent.on(link, 'click', this._refocusOnMap, this);
@@ -125,6 +125,10 @@ Map.mergeOptions({
 
 Map.addInitHook(function () {
 	if (this.options.zoomControl) {
+		// @section Controls
+		// @property zoomControl: Control.Zoom
+		// The default zoom control (only available if the
+		// [`zoomControl` option](#map-zoomcontrol) was `true` when creating the map).
 		this.zoomControl = new Zoom();
 		this.addControl(this.zoomControl);
 	}

@@ -19,6 +19,10 @@ import {Point, toPoint} from './Point';
  * ```js
  * otherBounds.intersects([[10, 10], [40, 60]]);
  * ```
+ *
+ * Note that `Bounds` does not inherit from Leaflet's `Class` object,
+ * which means new classes can't inherit from it, and new methods
+ * can't be added to it with the `include` function.
  */
 
 export function Bounds(a, b) {
@@ -71,6 +75,18 @@ Bounds.prototype = {
 	// Returns the top-right point of the bounds.
 	getTopRight: function () { // -> Point
 		return new Point(this.max.x, this.min.y);
+	},
+
+	// @method getTopLeft(): Point
+	// Returns the top-left point of the bounds (i.e. [`this.min`](#bounds-min)).
+	getTopLeft: function () {
+		return this.min; // left, top
+	},
+
+	// @method getBottomRight(): Point
+	// Returns the bottom-right point of the bounds (i.e. [`this.max`](#bounds-max)).
+	getBottomRight: function () {
+		return this.max; // right, bottom
 	},
 
 	// @method getSize(): Point
@@ -144,11 +160,11 @@ Bounds.prototype = {
 };
 
 
-// @factory L.bounds(topLeft: Point, bottomRight: Point)
-// Creates a Bounds object from two coordinates (usually top-left and bottom-right corners).
+// @factory L.bounds(corner1: Point, corner2: Point)
+// Creates a Bounds object from two corners coordinate pairs.
 // @alternative
 // @factory L.bounds(points: Point[])
-// Creates a Bounds object from the points it contains
+// Creates a Bounds object from the given array of points.
 export function toBounds(a, b) {
 	if (!a || a instanceof Bounds) {
 		return a;

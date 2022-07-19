@@ -45,15 +45,17 @@ export function bind(fn, obj) {
 	};
 }
 
-var lastId = 0;
+// @property lastId: Number
+// Last unique ID used by [`stamp()`](#util-stamp)
+export var lastId = 0;
 
 // @function stamp(obj: Object): Number
-// Returns the unique ID of an object, assiging it one if it doesn't have it.
+// Returns the unique ID of an object, assigning it one if it doesn't have it.
 export function stamp(obj) {
 	/*eslint-disable */
 	obj._leaflet_id = obj._leaflet_id || ++lastId;
 	return obj._leaflet_id;
-	/*eslint-enable */
+	/* eslint-enable */
 }
 
 // @function throttle(fn: Function, time: Number, context: Object): Function
@@ -107,9 +109,9 @@ export function wrapNum(x, range, includeMax) {
 export function falseFn() { return false; }
 
 // @function formatNum(num: Number, digits?: Number): Number
-// Returns the number `num` rounded to `digits` decimals, or to 5 decimals by default.
+// Returns the number `num` rounded to `digits` decimals, or to 6 decimals by default.
 export function formatNum(num, digits) {
-	var pow = Math.pow(10, digits || 5);
+	var pow = Math.pow(10, (digits === undefined ? 6 : digits));
 	return Math.round(num * pow) / pow;
 }
 
@@ -128,7 +130,7 @@ export function splitWords(str) {
 // @function setOptions(obj: Object, options: Object): Object
 // Merges the given properties to the `options` of the `obj` object, returning the resulting options. See `Class options`. Has an `L.setOptions` shortcut.
 export function setOptions(obj, options) {
-	if (!obj.hasOwnProperty('options')) {
+	if (!Object.prototype.hasOwnProperty.call(obj, 'options')) {
 		obj.options = obj.options ? create(obj.options) : {};
 	}
 	for (var i in options) {
@@ -150,7 +152,7 @@ export function getParamString(obj, existingUrl, uppercase) {
 	return ((!existingUrl || existingUrl.indexOf('?') === -1) ? '?' : '&') + params.join('&');
 }
 
-var templateRe = /\{ *([\w_\-]+) *\}/g;
+var templateRe = /\{ *([\w_-]+) *\}/g;
 
 // @function template(str: String, data: Object): String
 // Simple templating facility, accepts a template string of the form `'Hello {a}, {b}'`

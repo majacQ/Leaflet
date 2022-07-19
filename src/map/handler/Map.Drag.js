@@ -61,7 +61,6 @@ export var Drag = Handler.extend({
 			this._draggable = new Draggable(map._mapPane, map._container);
 
 			this._draggable.on({
-				down: this._onDown,
 				dragstart: this._onDragStart,
 				drag: this._onDrag,
 				dragend: this._onDragEnd
@@ -95,13 +94,10 @@ export var Drag = Handler.extend({
 		return this._draggable && this._draggable._moving;
 	},
 
-	_onDown: function () {
-		this._map._stop();
-	},
-
 	_onDragStart: function () {
 		var map = this._map;
 
+		map._stop();
 		if (this._map.options.maxBounds && this._map.options.maxBoundsViscosity) {
 			var bounds = latLngBounds(this._map.options.maxBounds);
 
@@ -133,15 +129,19 @@ export var Drag = Handler.extend({
 			this._positions.push(pos);
 			this._times.push(time);
 
-			if (time - this._times[0] > 50) {
-				this._positions.shift();
-				this._times.shift();
-			}
+			this._prunePositions(time);
 		}
 
 		this._map
 		    .fire('move', e)
 		    .fire('drag', e);
+	},
+
+	_prunePositions: function (time) {
+		while (this._positions.length > 1 && time - this._times[0] > 50) {
+			this._positions.shift();
+			this._times.shift();
+		}
 	},
 
 	_onZoomEnd: function () {
@@ -196,6 +196,7 @@ export var Drag = Handler.extend({
 			map.fire('moveend');
 
 		} else {
+			this._prunePositions(+new Date());
 
 			var direction = this._lastPos.subtract(this._positions[0]),
 			    duration = (this._lastTime - this._times[0]) / 1000,
